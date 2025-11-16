@@ -1,11 +1,11 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
-    # Google OAuth
-    GOOGLE_CLIENT_ID: str
-    GOOGLE_CLIENT_SECRET: str
+    # Google OAuth (Optional - only needed if using Gmail features)
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
     REDIRECT_URI: str = "http://localhost:8000/api/auth/callback"
 
     # OpenAI
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"  # Options: gpt-4o-mini, gpt-3.5-turbo, gpt-4
 
     # App Settings
-    SECRET_KEY: str
+    SECRET_KEY: str = "dev-secret-key-change-in-production"
     CORS_ORIGINS: str = "http://localhost:3000"
     ENVIRONMENT: str = "development"
 

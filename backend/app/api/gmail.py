@@ -41,7 +41,10 @@ async def scan_emails(
     try:
         emails = []
 
-        if scan_request.scan_type == "spam":
+        if scan_request.scan_type == "inbox":
+            # Scan entire inbox (all emails)
+            emails = gmail_service.search_emails("", scan_request.max_results)
+        elif scan_request.scan_type == "spam":
             emails = gmail_service.scan_spam_emails(scan_request.max_results)
         elif scan_request.scan_type == "large":
             min_size = scan_request.min_size_mb or 5.0
@@ -57,12 +60,25 @@ async def scan_emails(
         else:
             raise HTTPException(status_code=400, detail="Invalid scan type")
 
-        # Analyze with LangChain
-        agent = EmailAnalysisAgent()
-        analysis = agent.analyze_emails(emails, scan_request.scan_type)
+        # Sort emails by size in descending order
+        emails.sort(key=lambda x: x['size'], reverse=True)
+
+        # Analyze senders
+        sender_analysis = gmail_service.analyze_senders(emails)
+
+        # # Analyze with LangChain (DISABLED - focus on sender analysis)
+        # agent = EmailAnalysisAgent()
+        # analysis = agent.analyze_emails(emails, scan_request.scan_type)
 
         # Calculate total size
         total_size_mb = sum(e['size'] for e in emails) / (1024 * 1024)
+
+        # Create analysis message with size breakdown
+        if emails:
+            largest_email_mb = emails[0]['size'] / (1024 * 1024)
+            analysis = f"Found {len(emails)} emails totaling {total_size_mb:.2f} MB. Largest email: {largest_email_mb:.2f} MB. Sorted by size (largest first)."
+        else:
+            analysis = "No emails found matching the criteria."
 
         # Convert to EmailMessage objects
         email_messages = [EmailMessage(**e) for e in emails]
@@ -71,7 +87,8 @@ async def scan_emails(
             emails=email_messages,
             total_count=len(emails),
             total_size_mb=total_size_mb,
-            analysis=analysis
+            analysis=analysis,
+            sender_stats=sender_analysis[:50]  # Top 50 senders
         )
 
     except Exception as e:

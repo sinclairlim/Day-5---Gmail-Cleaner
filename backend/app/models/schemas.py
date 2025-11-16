@@ -21,10 +21,17 @@ class EmailMessage(BaseModel):
 
 
 class ScanRequest(BaseModel):
-    scan_type: str  # "spam", "large", "old", "all"
-    max_results: int = 100
+    scan_type: str  # "spam", "large", "old", "all", "inbox"
+    max_results: int = 5000
     days_old: Optional[int] = None  # For "old" type
     min_size_mb: Optional[float] = None  # For "large" type
+
+
+class SenderStat(BaseModel):
+    sender: str
+    count: int
+    total_size_mb: float
+    email_ids: List[str]
 
 
 class ScanResult(BaseModel):
@@ -32,6 +39,7 @@ class ScanResult(BaseModel):
     total_count: int
     total_size_mb: float
     analysis: str  # LangChain agent analysis
+    sender_stats: List[SenderStat] = []  # Top senders by count
 
 
 class DeleteRequest(BaseModel):

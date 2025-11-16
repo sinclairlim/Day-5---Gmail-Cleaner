@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 import base64
 import email
+import time
 
 
 class GmailService:
@@ -26,36 +27,80 @@ class GmailService:
             raise
 
     def search_emails(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
-        """Search emails based on Gmail query syntax"""
+        """Search emails based on Gmail query syntax with pagination support"""
         try:
-            results = self.service.users().messages().list(
-                userId=self.user_id,
-                q=query,
-                maxResults=max_results
-            ).execute()
+            all_messages = []
+            page_token = None
 
-            messages = results.get('messages', [])
+            # Gmail API returns max 500 results per page, so we need to paginate
+            while len(all_messages) < max_results:
+                # Request up to 500 messages per page (Gmail API limit)
+                page_size = min(500, max_results - len(all_messages))
+
+                results = self.service.users().messages().list(
+                    userId=self.user_id,
+                    q=query,
+                    maxResults=page_size,
+                    pageToken=page_token
+                ).execute()
+
+                messages = results.get('messages', [])
+                if not messages:
+                    break
+
+                all_messages.extend(messages)
+
+                # Check if there are more pages
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+
+            # Now fetch details for all messages in batches
             detailed_messages = []
+            batch_size = 50  # Reduced from 100 to avoid rate limits
 
-            for message in messages:
-                msg_detail = self.get_message_details(message['id'])
-                if msg_detail:
-                    detailed_messages.append(msg_detail)
+            for i in range(0, len(all_messages), batch_size):
+                batch = all_messages[i:i + batch_size]
+
+                # Create batch request
+                batch_request = self.service.new_batch_http_request()
+
+                def callback(request_id, response, exception):
+                    if exception:
+                        print(f"Error fetching message: {exception}")
+                    elif response:
+                        msg_detail = self._parse_message_response(response)
+                        if msg_detail:
+                            detailed_messages.append(msg_detail)
+
+                # Add all requests to batch
+                for message in batch:
+                    batch_request.add(
+                        self.service.users().messages().get(
+                            userId=self.user_id,
+                            id=message['id'],
+                            format='full'
+                        ),
+                        callback=callback
+                    )
+
+                # Execute batch
+                batch_request.execute()
+
+                # Add delay between batches to avoid rate limits
+                # Gmail allows ~250 quota units per second, each message.get costs 5 units
+                # So 50 messages = 250 units, we need to wait 1 second
+                if i + batch_size < len(all_messages):
+                    time.sleep(1)
 
             return detailed_messages
         except HttpError as error:
             print(f"An error occurred: {error}")
             raise
 
-    def get_message_details(self, message_id: str) -> Dict[str, Any]:
-        """Get detailed information about a specific email"""
+    def _parse_message_response(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse a Gmail message response into our format"""
         try:
-            message = self.service.users().messages().get(
-                userId=self.user_id,
-                id=message_id,
-                format='full'
-            ).execute()
-
             headers = message.get('payload', {}).get('headers', [])
             header_dict = {h['name']: h['value'] for h in headers}
 
@@ -79,6 +124,20 @@ class GmailService:
                 'labels': message.get('labelIds', []),
                 'snippet': message.get('snippet', '')
             }
+        except Exception as error:
+            print(f"Error parsing message: {error}")
+            return None
+
+    def get_message_details(self, message_id: str) -> Dict[str, Any]:
+        """Get detailed information about a specific email"""
+        try:
+            message = self.service.users().messages().get(
+                userId=self.user_id,
+                id=message_id,
+                format='full'
+            ).execute()
+
+            return self._parse_message_response(message)
         except HttpError as error:
             print(f"An error occurred: {error}")
             return None
@@ -89,13 +148,21 @@ class GmailService:
         return self.search_emails(query, max_results)
 
     def scan_large_emails(self, min_size_mb: float = 5.0, max_results: int = 100) -> List[Dict[str, Any]]:
-        """Find large emails"""
+        """Find large emails (sorted by size descending)"""
         # Gmail doesn't support size queries directly, so we search and filter
+        # We'll search for emails with attachments as they tend to be larger
         query = "has:attachment"
-        emails = self.search_emails(query, max_results * 2)
 
+        # Fetch more emails to ensure we get enough large ones
+        emails = self.search_emails(query, max_results * 3)
+
+        # Filter by minimum size
         min_size_bytes = min_size_mb * 1024 * 1024
-        return [e for e in emails if e['size'] >= min_size_bytes][:max_results]
+        large_emails = [e for e in emails if e['size'] >= min_size_bytes]
+
+        # Sort by size descending and limit results
+        large_emails.sort(key=lambda x: x['size'], reverse=True)
+        return large_emails[:max_results]
 
     def scan_old_emails(self, days_old: int = 365, max_results: int = 100) -> List[Dict[str, Any]]:
         """Find old emails"""
@@ -123,6 +190,38 @@ class GmailService:
             'failed_ids': failed_ids,
             'message': f'Successfully deleted {deleted_count} emails'
         }
+
+    def analyze_senders(self, emails: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Analyze emails by sender - group and count"""
+        from collections import defaultdict
+
+        sender_stats = defaultdict(lambda: {'count': 0, 'total_size': 0, 'emails': []})
+
+        for email in emails:
+            sender = email['sender']
+            # Extract email address from "Name <email@domain.com>" format
+            if '<' in sender and '>' in sender:
+                sender_email = sender.split('<')[1].split('>')[0].strip()
+            else:
+                sender_email = sender.strip()
+
+            sender_stats[sender_email]['count'] += 1
+            sender_stats[sender_email]['total_size'] += email['size']
+            sender_stats[sender_email]['emails'].append(email['id'])
+
+        # Convert to list and sort by count (descending)
+        result = []
+        for sender, stats in sender_stats.items():
+            result.append({
+                'sender': sender,
+                'count': stats['count'],
+                'total_size_mb': stats['total_size'] / (1024 * 1024),
+                'email_ids': stats['emails']
+            })
+
+        # Sort by count descending
+        result.sort(key=lambda x: x['count'], reverse=True)
+        return result
 
     def get_stats(self) -> Dict[str, Any]:
         """Get overall Gmail statistics"""

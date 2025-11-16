@@ -1,0 +1,143 @@
+.sender-stats {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.sender-stats-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  color: #1a202c;
+}
+
+.sender-stats-header svg {
+  color: #667eea;
+}
+
+.sender-stats-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.sender-count {
+  color: #718096;
+  font-size: 0.875rem;
+}
+
+.sender-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.sender-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: white;
+}
+
+.sender-item:hover {
+  border-color: #667eea;
+  background: #f7faff;
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+}
+
+.sender-rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.sender-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sender-email {
+  font-weight: 600;
+  color: #1a202c;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sender-details {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sender-count-badge,
+.sender-size-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: #edf2f7;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.sender-count-badge svg,
+.sender-size-badge svg {
+  color: #667eea;
+}
+
+.sender-actions {
+  display: flex;
+  align-items: center;
+}
+
+.select-hint {
+  font-size: 0.75rem;
+  color: #a0aec0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.sender-item:hover .select-hint {
+  opacity: 1;
+}
+
+.sender-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sender-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.sender-list::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+.sender-list::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}

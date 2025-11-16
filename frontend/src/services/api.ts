@@ -13,11 +13,19 @@ export interface EmailMessage {
   snippet: string
 }
 
+export interface SenderStat {
+  sender: string
+  count: number
+  total_size_mb: number
+  email_ids: string[]
+}
+
 export interface ScanResult {
   emails: EmailMessage[]
   total_count: number
   total_size_mb: number
   analysis: string
+  sender_stats: SenderStat[]
 }
 
 export interface Stats {
