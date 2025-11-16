@@ -1,7 +1,7 @@
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime, timedelta
 import base64
 import email
@@ -12,6 +12,7 @@ class GmailService:
     def __init__(self, credentials: Credentials):
         self.service = build('gmail', 'v1', credentials=credentials)
         self.user_id = 'me'
+        self.progress_callback: Optional[Callable] = None
 
     def get_user_info(self) -> Dict[str, Any]:
         """Get user profile information"""
@@ -58,9 +59,20 @@ class GmailService:
             # Now fetch details for all messages in batches
             detailed_messages = []
             batch_size = 50  # Reduced from 100 to avoid rate limits
+            total_batches = (len(all_messages) + batch_size - 1) // batch_size
 
-            for i in range(0, len(all_messages), batch_size):
+            for batch_idx, i in enumerate(range(0, len(all_messages), batch_size)):
                 batch = all_messages[i:i + batch_size]
+
+                # Update progress
+                if self.progress_callback:
+                    progress = int((batch_idx / total_batches) * 100)
+                    self.progress_callback({
+                        'progress': progress,
+                        'current': len(detailed_messages),
+                        'total': len(all_messages),
+                        'status': f'Processing batch {batch_idx + 1} of {total_batches}'
+                    })
 
                 # Create batch request
                 batch_request = self.service.new_batch_http_request()
@@ -92,6 +104,15 @@ class GmailService:
                 # So 50 messages = 250 units, we need to wait 1 second
                 if i + batch_size < len(all_messages):
                     time.sleep(1)
+
+            # Final progress update
+            if self.progress_callback:
+                self.progress_callback({
+                    'progress': 100,
+                    'current': len(detailed_messages),
+                    'total': len(all_messages),
+                    'status': 'Complete'
+                })
 
             return detailed_messages
         except HttpError as error:

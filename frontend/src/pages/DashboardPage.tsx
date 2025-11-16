@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { logout, scanEmails, deleteEmails, getStats, EmailMessage, ScanResult, Stats } from '../services/api'
+import { logout, scanEmails, deleteEmails, getStats, getScanProgress, EmailMessage, ScanResult, Stats } from '../services/api'
 import { Mail, LogOut, Trash2, Search, BarChart3 } from 'lucide-react'
 import EmailList from '../components/EmailList'
 import StatsCard from '../components/StatsCard'
@@ -39,18 +39,18 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
     setProgress(0)
     setScanStatus('Starting scan...')
 
-    // Estimate progress based on expected time
-    // ~1 second per 50 emails (batch)
-    const estimatedSeconds = Math.ceil(maxResults / 50)
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 95) return prev // Cap at 95% until actually done
-        return prev + (100 / estimatedSeconds)
-      })
-    }, 1000)
+    // Poll for real progress from backend
+    const progressInterval = setInterval(async () => {
+      try {
+        const progressData = await getScanProgress()
+        setProgress(progressData.progress)
+        setScanStatus(progressData.status)
+      } catch (error) {
+        console.error('Failed to get progress:', error)
+      }
+    }, 500) // Poll every 500ms
 
     try {
-      setScanStatus(`Scanning ${maxResults} emails...`)
       const result = await scanEmails('inbox', maxResults)
       clearInterval(progressInterval)
       setProgress(100)
@@ -205,29 +205,29 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
                 justifyContent: 'space-between',
                 marginBottom: '0.5rem',
                 fontSize: '0.875rem',
-                color: '#4a5568'
+                color: '#4a5568',
+                fontWeight: 500
               }}>
                 <span>{scanStatus}</span>
                 <span>{Math.round(progress)}%</span>
               </div>
               <div style={{
                 width: '100%',
-                height: '8px',
+                height: '10px',
                 backgroundColor: '#e2e8f0',
-                borderRadius: '4px',
-                overflow: 'hidden'
+                borderRadius: '6px',
+                overflow: 'hidden',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
               }}>
                 <div style={{
                   width: `${progress}%`,
                   height: '100%',
-                  backgroundColor: '#667eea',
+                  background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)',
                   transition: 'width 0.3s ease',
-                  borderRadius: '4px'
+                  borderRadius: '6px',
+                  boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)'
                 }} />
               </div>
-              <p style={{ fontSize: '0.75rem', color: '#718096', marginTop: '0.5rem' }}>
-                Estimated time: ~{Math.ceil(maxResults / 50)} seconds
-              </p>
             </div>
           )}
 

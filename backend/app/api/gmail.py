@@ -7,9 +7,12 @@ from app.services.gmail_service import GmailService
 from app.services.langchain_agent import EmailAnalysisAgent
 from app.api.auth import get_credentials
 from google.oauth2.credentials import Credentials
-from typing import List
+from typing import List, Dict, Any
 
 router = APIRouter()
+
+# In-memory progress storage (key: user email, value: progress data)
+scan_progress: Dict[str, Dict[str, Any]] = {}
 
 
 def get_gmail_service(credentials: Credentials = Depends(get_credentials)) -> GmailService:
@@ -35,10 +38,29 @@ async def get_user_info(gmail_service: GmailService = Depends(get_gmail_service)
 @router.post("/scan", response_model=ScanResult)
 async def scan_emails(
     scan_request: ScanRequest,
-    gmail_service: GmailService = Depends(get_gmail_service)
+    gmail_service: GmailService = Depends(get_gmail_service),
+    credentials: Credentials = Depends(get_credentials)
 ):
     """Scan emails based on criteria"""
     try:
+        # Get user email for progress tracking
+        user_info = gmail_service.get_user_info()
+        user_email = user_info['email']
+
+        # Initialize progress
+        scan_progress[user_email] = {
+            'progress': 0,
+            'current': 0,
+            'total': 0,
+            'status': 'Starting scan...'
+        }
+
+        # Set up progress callback
+        def update_progress(progress_data):
+            scan_progress[user_email] = progress_data
+
+        gmail_service.progress_callback = update_progress
+
         emails = []
 
         if scan_request.scan_type == "inbox":
@@ -104,6 +126,25 @@ async def delete_emails(
     try:
         result = gmail_service.delete_emails(delete_request.email_ids)
         return DeleteResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/scan-progress")
+async def get_scan_progress(gmail_service: GmailService = Depends(get_gmail_service)):
+    """Get current scan progress"""
+    try:
+        user_info = gmail_service.get_user_info()
+        user_email = user_info['email']
+
+        progress_data = scan_progress.get(user_email, {
+            'progress': 0,
+            'current': 0,
+            'total': 0,
+            'status': 'No scan in progress'
+        })
+
+        return progress_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

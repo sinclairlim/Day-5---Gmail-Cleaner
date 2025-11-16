@@ -82,3 +82,15 @@ export const getUserInfo = async () => {
   const response = await axios.get(`${API_BASE}/gmail/user-info`)
   return response.data
 }
+
+export interface ScanProgress {
+  progress: number
+  current: number
+  total: number
+  status: string
+}
+
+export const getScanProgress = async (): Promise<ScanProgress> => {
+  const response = await axios.get(`${API_BASE}/gmail/scan-progress`)
+  return response.data
+}
