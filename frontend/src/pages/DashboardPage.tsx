@@ -14,12 +14,10 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
   const [maxResults, setMaxResults] = useState(5000)
-  const [scanStatus, setScanStatus] = useState('')
 
   const handleScan = async () => {
     setLoading(true)
     setSelectedEmails(new Set())
-    setScanStatus('Starting scan...')
 
     // Start polling IMMEDIATELY at high frequency
     const progressInterval = setInterval(async () => {
@@ -28,7 +26,7 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
         console.log('Progress update:', progressData) // Debug log
         // Only update if not "No scan in progress"
         if (progressData.status !== 'No scan in progress') {
-          setScanStatus(progressData.status)
+          // status updates disabled for now
         }
       } catch (error) {
         console.error('Failed to get progress:', error)
@@ -41,14 +39,9 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
     try {
       const result = await scanEmails('inbox', maxResults)
       clearInterval(progressInterval)
-      setScanStatus('Scan complete!')
       setScanResult(result)
-      setTimeout(() => {
-        setScanStatus('')
-      }, 2000)
     } catch (error) {
       clearInterval(progressInterval)
-      setScanStatus('')
       console.error('Scan failed:', error)
       alert('Scan failed. Please try again.')
     }
@@ -183,35 +176,12 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
             </button>
           </div>
 
-          {loading && (
-            <div style={{
-              marginTop: '1rem',
-              padding: '1rem',
-              backgroundColor: '#f7fafc',
-              borderRadius: '8px',
-              border: '1px solid #e2e8f0'
-            }}>
-              <div style={{
-                fontSize: '0.875rem',
-                color: '#2d3748',
-                fontFamily: 'monospace',
-                fontWeight: 500
-              }}>
-                {scanStatus || 'Starting scan...'}
-              </div>
-            </div>
-          )}
-
-          {!loading && (
-            <>
-              <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.5rem' }}>
-                Scans your entire inbox and sorts by email size (largest first)
-              </p>
-              <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.25rem', fontStyle: 'italic' }}>
-                Estimated time: ~10s (100 emails) • ~50s (500 emails) • ~100s (1000 emails)
-              </p>
-            </>
-          )}
+          <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.5rem' }}>
+            Scans your entire inbox and sorts by email size (largest first)
+          </p>
+          <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.25rem', fontStyle: 'italic' }}>
+            Estimated time: ~10s (100 emails) • ~50s (500 emails) • ~100s (1000 emails)
+          </p>
         </div>
 
         {scanResult && (
