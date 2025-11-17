@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import base64
 import email
 import time
+import random
 
 
 class GmailService:
@@ -14,10 +15,44 @@ class GmailService:
         self.user_id = 'me'
         self.progress_callback: Optional[Callable] = None
 
+        # Rate limiting configuration
+        self.max_retries = 5
+        self.base_delay = 1.0  # seconds
+        self.max_delay = 32.0  # seconds
+
+    def _execute_with_backoff(self, request, operation_name: str = "API call"):
+        """Execute a request with exponential backoff retry logic"""
+        for attempt in range(self.max_retries):
+            try:
+                return request.execute()
+            except HttpError as error:
+                # Check if it's a rate limit error (429)
+                if error.resp.status == 429:
+                    if attempt < self.max_retries - 1:
+                        # Calculate exponential backoff with jitter
+                        delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                        jitter = random.uniform(0, 0.3 * delay)
+                        sleep_time = delay + jitter
+
+                        print(f"Rate limit hit on {operation_name}. Retrying in {sleep_time:.2f}s (attempt {attempt + 1}/{self.max_retries})")
+                        time.sleep(sleep_time)
+                    else:
+                        print(f"Max retries reached for {operation_name}")
+                        raise
+                else:
+                    # Non-rate-limit error, raise immediately
+                    raise
+            except Exception as error:
+                print(f"Unexpected error in {operation_name}: {error}")
+                raise
+
     def get_user_info(self) -> Dict[str, Any]:
         """Get user profile information"""
         try:
-            profile = self.service.users().getProfile(userId=self.user_id).execute()
+            profile = self._execute_with_backoff(
+                self.service.users().getProfile(userId=self.user_id),
+                "get_user_info"
+            )
             return {
                 'email': profile.get('emailAddress'),
                 'total_messages': profile.get('messagesTotal', 0),
@@ -28,16 +63,18 @@ class GmailService:
             raise
 
     def search_emails(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
-        """Search emails based on Gmail query syntax with pagination support"""
+        """Search emails based on Gmail query syntax - SIMPLIFIED VERSION"""
         try:
+            print(f"\n=== Starting email search: query='{query}', max_results={max_results} ===")
+
             all_messages = []
             page_token = None
 
-            # Gmail API returns max 500 results per page, so we need to paginate
+            # Step 1: Get list of message IDs
             while len(all_messages) < max_results:
-                # Request up to 500 messages per page (Gmail API limit)
                 page_size = min(500, max_results - len(all_messages))
 
+                print(f"Fetching message IDs (page_size={page_size})...")
                 results = self.service.users().messages().list(
                     userId=self.user_id,
                     q=query,
@@ -50,60 +87,71 @@ class GmailService:
                     break
 
                 all_messages.extend(messages)
+                print(f"Got {len(messages)} message IDs (total: {len(all_messages)})")
 
-                # Check if there are more pages
                 page_token = results.get('nextPageToken')
                 if not page_token:
                     break
 
-            # Now fetch details for all messages in batches
+            if not all_messages:
+                print("No messages found")
+                return []
+
+            print(f"\n=== Fetching details for {len(all_messages)} messages ===")
+
+            # Step 2: Fetch details one by one (simple, no batching)
             detailed_messages = []
-            batch_size = 50  # Reduced from 100 to avoid rate limits
-            total_batches = (len(all_messages) + batch_size - 1) // batch_size
 
-            for batch_idx, i in enumerate(range(0, len(all_messages), batch_size)):
-                batch = all_messages[i:i + batch_size]
+            for idx, msg in enumerate(all_messages, 1):
+                try:
+                    # Update progress
+                    if self.progress_callback:
+                        progress = int((idx / len(all_messages)) * 100)
+                        self.progress_callback({
+                            'progress': progress,
+                            'current': idx,
+                            'total': len(all_messages),
+                            'status': f'Fetching email {idx} of {len(all_messages)}'
+                        })
 
-                # Update progress
-                if self.progress_callback:
-                    progress = int((batch_idx / total_batches) * 100)
-                    self.progress_callback({
-                        'progress': progress,
-                        'current': len(detailed_messages),
-                        'total': len(all_messages),
-                        'status': f'Processing batch {batch_idx + 1} of {total_batches}'
-                    })
+                    # Fetch metadata (faster than 'full')
+                    message = self.service.users().messages().get(
+                        userId=self.user_id,
+                        id=msg['id'],
+                        format='metadata',
+                        metadataHeaders=['From', 'Subject', 'Date']
+                    ).execute()
 
-                # Create batch request
-                batch_request = self.service.new_batch_http_request()
+                    msg_detail = self._parse_message_response(message)
+                    if msg_detail:
+                        detailed_messages.append(msg_detail)
 
-                def callback(request_id, response, exception):
-                    if exception:
-                        print(f"Error fetching message: {exception}")
-                    elif response:
-                        msg_detail = self._parse_message_response(response)
-                        if msg_detail:
-                            detailed_messages.append(msg_detail)
+                    if idx % 10 == 0:
+                        print(f"Progress: {idx}/{len(all_messages)} emails fetched")
 
-                # Add all requests to batch
-                for message in batch:
-                    batch_request.add(
-                        self.service.users().messages().get(
-                            userId=self.user_id,
-                            id=message['id'],
-                            format='full'
-                        ),
-                        callback=callback
-                    )
+                    # Small delay every 10 requests to avoid rate limits
+                    if idx % 10 == 0:
+                        time.sleep(0.2)
 
-                # Execute batch
-                batch_request.execute()
-
-                # Add delay between batches to avoid rate limits
-                # Gmail allows ~250 quota units per second, each message.get costs 5 units
-                # So 50 messages = 250 units, we need to wait 1 second
-                if i + batch_size < len(all_messages):
-                    time.sleep(1)
+                except HttpError as error:
+                    if error.resp.status == 429:
+                        print(f"Rate limit hit at email {idx}, waiting 2 seconds...")
+                        time.sleep(2)
+                        # Retry once
+                        try:
+                            message = self.service.users().messages().get(
+                                userId=self.user_id,
+                                id=msg['id'],
+                                format='metadata',
+                                metadataHeaders=['From', 'Subject', 'Date']
+                            ).execute()
+                            msg_detail = self._parse_message_response(message)
+                            if msg_detail:
+                                detailed_messages.append(msg_detail)
+                        except:
+                            print(f"Failed to fetch email {idx} after retry")
+                    else:
+                        print(f"Error fetching email {idx}: {error}")
 
             # Final progress update
             if self.progress_callback:
@@ -114,7 +162,9 @@ class GmailService:
                     'status': 'Complete'
                 })
 
+            print(f"=== Scan complete: {len(detailed_messages)} emails fetched ===\n")
             return detailed_messages
+
         except HttpError as error:
             print(f"An error occurred: {error}")
             raise
@@ -174,8 +224,10 @@ class GmailService:
         # We'll search for emails with attachments as they tend to be larger
         query = "has:attachment"
 
-        # Fetch more emails to ensure we get enough large ones
-        emails = self.search_emails(query, max_results * 3)
+        # Fetch a reasonable multiplier to account for filtering
+        # Use 1.5x instead of 3x to reduce API calls
+        fetch_count = min(int(max_results * 1.5), max_results + 50)
+        emails = self.search_emails(query, fetch_count)
 
         # Filter by minimum size
         min_size_bytes = min_size_mb * 1024 * 1024
@@ -245,20 +297,19 @@ class GmailService:
         return result
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get overall Gmail statistics"""
+        """Get Gmail statistics - only large emails"""
         try:
-            spam_emails = self.scan_spam_emails(max_results=500)
-            large_emails = self.scan_large_emails(max_results=500)
-            old_emails = self.scan_old_emails(max_results=500)
+            # Only scan for large emails
+            large_emails = self.scan_large_emails(max_results=50)
 
-            total_size = sum(e['size'] for e in spam_emails + large_emails + old_emails)
+            total_size = sum(e['size'] for e in large_emails)
 
             return {
-                'total_emails': len(spam_emails) + len(large_emails) + len(old_emails),
+                'total_emails': len(large_emails),
                 'total_size_mb': total_size / (1024 * 1024),
-                'spam_count': len(spam_emails),
+                'spam_count': 0,  # No longer scanning
                 'large_emails_count': len(large_emails),
-                'old_emails_count': len(old_emails)
+                'old_emails_count': 0  # No longer scanning
             }
         except HttpError as error:
             print(f"An error occurred: {error}")

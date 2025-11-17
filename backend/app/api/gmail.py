@@ -41,7 +41,7 @@ async def scan_emails(
     gmail_service: GmailService = Depends(get_gmail_service),
     credentials: Credentials = Depends(get_credentials)
 ):
-    """Scan emails based on criteria"""
+    """Scan the latest 500 emails and show top senders"""
     try:
         # Get user email for progress tracking
         user_info = gmail_service.get_user_info()
@@ -61,46 +61,24 @@ async def scan_emails(
 
         gmail_service.progress_callback = update_progress
 
-        emails = []
+        # SIMPLIFIED: Just fetch the latest emails (no filtering)
+        # Use max_results from request, default to 500
+        max_emails = scan_request.max_results or 500
+        print(f"\n>>> Scanning latest {max_emails} emails <<<\n")
 
-        if scan_request.scan_type == "inbox":
-            # Scan entire inbox (all emails)
-            emails = gmail_service.search_emails("", scan_request.max_results)
-        elif scan_request.scan_type == "spam":
-            emails = gmail_service.scan_spam_emails(scan_request.max_results)
-        elif scan_request.scan_type == "large":
-            min_size = scan_request.min_size_mb or 5.0
-            emails = gmail_service.scan_large_emails(min_size, scan_request.max_results)
-        elif scan_request.scan_type == "old":
-            days_old = scan_request.days_old or 365
-            emails = gmail_service.scan_old_emails(days_old, scan_request.max_results)
-        elif scan_request.scan_type == "all":
-            spam = gmail_service.scan_spam_emails(scan_request.max_results // 3)
-            large = gmail_service.scan_large_emails(5.0, scan_request.max_results // 3)
-            old = gmail_service.scan_old_emails(365, scan_request.max_results // 3)
-            emails = spam + large + old
-        else:
-            raise HTTPException(status_code=400, detail="Invalid scan type")
+        emails = gmail_service.search_emails("", max_emails)
 
-        # Sort emails by size in descending order
-        emails.sort(key=lambda x: x['size'], reverse=True)
-
-        # Analyze senders
+        # Analyze senders (this is just processing, no additional API calls)
         sender_analysis = gmail_service.analyze_senders(emails)
-
-        # # Analyze with LangChain (DISABLED - focus on sender analysis)
-        # agent = EmailAnalysisAgent()
-        # analysis = agent.analyze_emails(emails, scan_request.scan_type)
 
         # Calculate total size
         total_size_mb = sum(e['size'] for e in emails) / (1024 * 1024)
 
-        # Create analysis message with size breakdown
+        # Create analysis message
         if emails:
-            largest_email_mb = emails[0]['size'] / (1024 * 1024)
-            analysis = f"Found {len(emails)} emails totaling {total_size_mb:.2f} MB. Largest email: {largest_email_mb:.2f} MB. Sorted by size (largest first)."
+            analysis = f"Scanned {len(emails)} latest emails totaling {total_size_mb:.2f} MB. Top senders shown below."
         else:
-            analysis = "No emails found matching the criteria."
+            analysis = "No emails found."
 
         # Convert to EmailMessage objects
         email_messages = [EmailMessage(**e) for e in emails]
@@ -150,10 +128,13 @@ async def get_scan_progress(gmail_service: GmailService = Depends(get_gmail_serv
 
 
 @router.get("/stats", response_model=StatsResponse)
-async def get_stats(gmail_service: GmailService = Depends(get_gmail_service)):
-    """Get Gmail statistics"""
-    try:
-        stats = gmail_service.get_stats()
-        return StatsResponse(**stats)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def get_stats():
+    """Get Gmail statistics - DISABLED to avoid automatic API calls"""
+    # Return dummy data without making any Gmail API calls
+    return StatsResponse(
+        total_emails=0,
+        total_size_mb=0.0,
+        spam_count=0,
+        large_emails_count=0,
+        old_emails_count=0
+    )

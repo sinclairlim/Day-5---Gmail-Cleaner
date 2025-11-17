@@ -3,7 +3,6 @@ import { logout, scanEmails, deleteEmails, getStats, getScanProgress, EmailMessa
 import { Mail, LogOut, Trash2, Search, BarChart3 } from 'lucide-react'
 import EmailList from '../components/EmailList'
 import StatsCard from '../components/StatsCard'
-import AnalysisPanel from '../components/AnalysisPanel'
 import SenderStats from '../components/SenderStats'
 import './DashboardPage.css'
 
@@ -20,9 +19,10 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
   const [progress, setProgress] = useState(0)
   const [scanStatus, setScanStatus] = useState('')
 
-  useEffect(() => {
-    loadStats()
-  }, [])
+  // Disabled automatic stats loading to avoid API calls
+  // useEffect(() => {
+  //   loadStats()
+  // }, [])
 
   const loadStats = async () => {
     try {
@@ -39,16 +39,23 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
     setProgress(0)
     setScanStatus('Starting scan...')
 
-    // Poll for real progress from backend
+    // Start polling IMMEDIATELY at high frequency
     const progressInterval = setInterval(async () => {
       try {
         const progressData = await getScanProgress()
-        setProgress(progressData.progress)
-        setScanStatus(progressData.status)
+        console.log('Progress update:', progressData) // Debug log
+        // Only update if not "No scan in progress"
+        if (progressData.status !== 'No scan in progress') {
+          setProgress(progressData.progress)
+          setScanStatus(progressData.status)
+        }
       } catch (error) {
         console.error('Failed to get progress:', error)
       }
-    }, 500) // Poll every 500ms
+    }, 100) // Poll every 100ms for very responsive updates
+
+    // Tiny delay to ensure interval starts
+    await new Promise(resolve => setTimeout(resolve, 50))
 
     try {
       const result = await scanEmails('inbox', maxResults)
@@ -154,11 +161,12 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
       </header>
 
       <main className="dashboard-content">
-        {stats && (
+        {/* Stats disabled to avoid automatic API calls */}
+        {/* {stats && (
           <div className="stats-grid">
             <StatsCard
-              title="Total Emails"
-              value={stats.total_emails}
+              title="Large Emails"
+              value={stats.large_emails_count}
               icon={<Mail size={24} />}
             />
             <StatsCard
@@ -167,12 +175,12 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
               icon={<BarChart3 size={24} />}
             />
             <StatsCard
-              title="Spam Emails"
-              value={stats.spam_count}
-              icon={<Trash2 size={24} />}
+              title="Avg Size"
+              value={stats.large_emails_count > 0 ? `${(stats.total_size_mb / stats.large_emails_count).toFixed(2)} MB` : '0 MB'}
+              icon={<BarChart3 size={24} />}
             />
           </div>
-        )}
+        )} */}
 
         <div className="scan-section">
           <h2>Scan Your Inbox (Sorted by Size)</h2>
@@ -199,49 +207,38 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
           </div>
 
           {loading && (
-            <div style={{ marginTop: '1rem' }}>
+            <div style={{
+              marginTop: '1rem',
+              padding: '1rem',
+              backgroundColor: '#f7fafc',
+              borderRadius: '8px',
+              border: '1px solid #e2e8f0'
+            }}>
               <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginBottom: '0.5rem',
                 fontSize: '0.875rem',
-                color: '#4a5568',
+                color: '#2d3748',
+                fontFamily: 'monospace',
                 fontWeight: 500
               }}>
-                <span>{scanStatus}</span>
-                <span>{Math.round(progress)}%</span>
-              </div>
-              <div style={{
-                width: '100%',
-                height: '10px',
-                backgroundColor: '#e2e8f0',
-                borderRadius: '6px',
-                overflow: 'hidden',
-                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{
-                  width: `${progress}%`,
-                  height: '100%',
-                  background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)',
-                  transition: 'width 0.3s ease',
-                  borderRadius: '6px',
-                  boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)'
-                }} />
+                {scanStatus || 'Starting scan...'}
               </div>
             </div>
           )}
 
           {!loading && (
-            <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.5rem' }}>
-              Scans your entire inbox and sorts by email size (largest first)
-            </p>
+            <>
+              <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.5rem' }}>
+                Scans your entire inbox and sorts by email size (largest first)
+              </p>
+              <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.25rem', fontStyle: 'italic' }}>
+                Estimated time: ~10s (100 emails) • ~50s (500 emails) • ~100s (1000 emails)
+              </p>
+            </>
           )}
         </div>
 
         {scanResult && (
           <>
-            <AnalysisPanel analysis={scanResult.analysis} />
-
             <SenderStats
               senderStats={scanResult.sender_stats}
               onSelectSender={selectEmailsFromSender}
