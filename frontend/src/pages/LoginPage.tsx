@@ -3,11 +3,7 @@ import { login } from '../services/api'
 import { Mail, Sparkles } from 'lucide-react'
 import './LoginPage.css'
 
-interface LoginPageProps {
-  onLogin: () => void
-}
-
-function LoginPage({ onLogin }: LoginPageProps) {
+function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   const handleLogin = async () => {

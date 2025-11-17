@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react'
-import { logout, scanEmails, deleteEmails, getStats, getScanProgress, EmailMessage, ScanResult, Stats } from '../services/api'
-import { Mail, LogOut, Trash2, Search, BarChart3 } from 'lucide-react'
+import { useState } from 'react'
+import { logout, scanEmails, deleteEmails, getScanProgress, ScanResult } from '../services/api'
+import { Mail, LogOut, Trash2, Search } from 'lucide-react'
 import EmailList from '../components/EmailList'
-import StatsCard from '../components/StatsCard'
 import SenderStats from '../components/SenderStats'
 import './DashboardPage.css'
 
@@ -14,29 +13,12 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
   const [loading, setLoading] = useState(false)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
-  const [stats, setStats] = useState<Stats | null>(null)
   const [maxResults, setMaxResults] = useState(5000)
-  const [progress, setProgress] = useState(0)
   const [scanStatus, setScanStatus] = useState('')
-
-  // Disabled automatic stats loading to avoid API calls
-  // useEffect(() => {
-  //   loadStats()
-  // }, [])
-
-  const loadStats = async () => {
-    try {
-      const data = await getStats()
-      setStats(data)
-    } catch (error) {
-      console.error('Failed to load stats:', error)
-    }
-  }
 
   const handleScan = async () => {
     setLoading(true)
     setSelectedEmails(new Set())
-    setProgress(0)
     setScanStatus('Starting scan...')
 
     // Start polling IMMEDIATELY at high frequency
@@ -46,7 +28,6 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
         console.log('Progress update:', progressData) // Debug log
         // Only update if not "No scan in progress"
         if (progressData.status !== 'No scan in progress') {
-          setProgress(progressData.progress)
           setScanStatus(progressData.status)
         }
       } catch (error) {
@@ -60,16 +41,13 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
     try {
       const result = await scanEmails('inbox', maxResults)
       clearInterval(progressInterval)
-      setProgress(100)
       setScanStatus('Scan complete!')
       setScanResult(result)
       setTimeout(() => {
-        setProgress(0)
         setScanStatus('')
       }, 2000)
     } catch (error) {
       clearInterval(progressInterval)
-      setProgress(0)
       setScanStatus('')
       console.error('Scan failed:', error)
       alert('Scan failed. Please try again.')
@@ -104,7 +82,6 @@ function DashboardPage({ onLogout }: DashboardPageProps) {
       }
 
       setSelectedEmails(new Set())
-      loadStats()
     } catch (error) {
       console.error('Delete failed:', error)
       alert('Delete failed. Please try again.')

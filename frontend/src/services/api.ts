@@ -1,6 +1,8 @@
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:8000/api'
+// Allow overriding the API base URL at build/runtime (e.g., Vercel env)
+const apiBaseEnv = import.meta.env.VITE_API_BASE as string | undefined
+const API_BASE = (apiBaseEnv || 'http://localhost:8000/api').replace(/\/$/, '')
 
 export interface EmailMessage {
   id: string
